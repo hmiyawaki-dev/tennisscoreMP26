@@ -1,0 +1,521 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { Trophy, Settings, Activity, History, Undo2, Save, Users, Zap, AlertCircle, Pencil, Trash2, X, Check, Menu, CloudUpload, Share2, RefreshCw, LogOut, Download, Keyboard, List as ListIcon, User } from 'lucide-react';
+
+// --- Constants & Types ---
+const POINTS = ['0', '15', '30', '40', 'Ad'];
+const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbwWuqbncAqt5LilJJ9A50Xz7HUmzV4gxnwQf4TwiOvhRHIm5uIaGpdaejI5dnf_vCse/exec"; 
+
+const DEFAULT_PLAYER_LIST = {
+    "神戸野田 男": [
+        "川口 暖斗", "河野 晃太", "菊川 雄介", "玉田 一将", "舩岡 恵大", 
+        "小林 純平", "高橋 史生", "飯田 隼生", "小橋 悠人", "谷澤 拓真", 
+        "春田 陽向", "藤谷 柊司", "三木 望夢", "村山 蒼"
+    ],
+    "神戸野田 女": [
+        "黒木 凜", "石田 実莉", "五島 宇莉", "早見 芽衣", "山本 結貴", 
+        "石川 夕楓", "笠原 瑠那", "川中 一花", "谷口 楓"
+    ]
+};
+
+// --- Helper Components ---
+const Button = ({ onClick, children, className = "", variant = "primary", disabled = false, size = "md" }) => {
+    const baseStyle = "font-bold rounded-lg shadow-sm transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center touch-manipulation select-none";
+    const variants = {
+        primary: "bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800",
+        secondary: "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 active:bg-gray-100",
+        success: "bg-green-600 text-white hover:bg-green-700 active:bg-green-800",
+        danger: "bg-red-500 text-white hover:bg-red-600 active:bg-red-700",
+        warning: "bg-yellow-400 text-yellow-900 hover:bg-yellow-500 active:bg-yellow-600",
+        dark: "bg-slate-800 text-white hover:bg-slate-900 active:bg-slate-950",
+        ghost: "bg-transparent text-slate-600 hover:bg-slate-100 shadow-none"
+    };
+    const sizes = { xs: "px-2 py-1 text-xs", sm: "px-2 py-1 text-sm", md: "px-4 py-2 text-sm", lg: "px-6 py-3 text-lg", xl: "px-8 py-4 text-xl h-20" };
+    return (
+        <button onClick={onClick} className={`${baseStyle} ${variants[variant]} ${sizes[size]} ${className}`} disabled={disabled} style={{ WebkitTapHighlightColor: 'transparent' }}>
+            {children}
+        </button>
+    );
+};
+
+const Card = ({ children, className = "" }) => (
+    <div className={`bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden ${className}`}>{children}</div>
+);
+
+// --- Stats Graph Component ---
+const SinglePlayerGraph = ({ data, color, playerName }) => {
+    if (!data || data.length === 0) return null;
+    const height = 160; const width = 300; const padding = 20; const graphHeight = height - padding * 2 - 20; const graphWidth = width - padding * 2;
+    const maxGames = data.length; const xStep = maxGames > 1 ? graphWidth / (maxGames - 1) : graphWidth;
+    const getCoords = (index, percent) => {
+        const x = padding + index * xStep; const finalX = maxGames === 1 ? width / 2 : x; const y = height - padding - 20 - (percent / 100) * graphHeight; return `${finalX},${y}`;
+    };
+    const points1st = data.map((d, i) => getCoords(i, d.rate1st)).join(" ");
+    const pointsTotal = data.map((d, i) => getCoords(i, d.rateTotal)).join(" ");
+    return (
+        <div className="w-full mb-4">
+            <h5 className="text-xs font-bold text-gray-500 mb-2 pl-2 border-l-4 flex justify-between items-center" style={{ borderColor: color }}>
+                <span>{playerName}</span>
+                <div className="flex gap-2 text-[9px] font-normal opacity-70">
+                    <div className="flex items-center gap-1"><span className="w-2 h-0.5" style={{ backgroundColor: color }}></span>1st</div>
+                    <div className="flex items-center gap-1"><span className="w-2 h-0.5 border-t border-dashed" style={{ borderColor: color, borderWidth: "1px" }}></span>Total</div>
+                </div>
+            </h5>
+            <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="bg-slate-50 rounded border border-slate-100 select-none">
+                {[0, 50, 100].map(p => (<line key={p} x1={padding} y1={height - padding - 20 - (p / 100) * graphHeight} x2={width - padding} y2={height - padding - 20 - (p / 100) * graphHeight} stroke="#e2e8f0" strokeWidth="1" />))}
+                {maxGames > 1 && (<><polyline points={pointsTotal} fill="none" stroke={color} strokeWidth="2" strokeDasharray="4 2" opacity="0.6" /><polyline points={points1st} fill="none" stroke={color} strokeWidth="2" /></>)}
+                {data.map((d, i) => {
+                    const [x1, y1] = getCoords(i, d.rate1st).split(','); const [xt, yt] = getCoords(i, d.rateTotal).split(',');
+                    return (<g key={i}><circle cx={xt} cy={yt} r="2" fill={color} opacity="0.6" /><circle cx={x1} cy={y1} r="3" fill={color} /><text x={x1} y={parseFloat(y1) - 8} fontSize="9" textAnchor="middle" fill={color} fontWeight="bold">{d.rate1st}%</text><text x={x1} y={height - 5} fontSize="9" textAnchor="middle" fill="#94a3b8">{d.gameIndex}</text></g>);
+                })}
+            </svg>
+        </div>
+    );
+};
+
+const StatsGraphs = ({ gameStats, matchInfo }) => {
+    const players = [
+        { key: 'A1', name: matchInfo.playerA1, color: '#2563eb' },
+        { key: 'A2', name: matchInfo.playerA2, color: '#60a5fa' },
+        { key: 'B1', name: matchInfo.playerB1, color: '#dc2626' },
+        { key: 'B2', name: matchInfo.playerB2, color: '#f87171' }
+    ];
+    return (
+        <div>
+            <h4 className="text-sm font-bold text-gray-600 mb-2 text-center">サーブ成功率推移 (ゲーム毎)</h4>
+            <div className="grid grid-cols-1 gap-2">
+                {players.map(p => {
+                    if (!p.name) return null; 
+                    const pData = gameStats.filter(g => g.serverPlayer === p.key).map(g => ({ gameIndex: g.gameIndex, rate1st: g.stats.rate1st, rateTotal: g.stats.rateTotal }));
+                    if (pData.length === 0) return null;
+                    return <SinglePlayerGraph key={p.key} data={pData} color={p.color} playerName={p.name} />;
+                })}
+            </div>
+        </div>
+    );
+};
+
+// --- Player Select Component ---
+const PlayerSelectInput = ({ label, value, onChange, playerList }) => {
+    const [mode, setMode] = useState('list');
+    const [team, setTeam] = useState('');
+    const teams = useMemo(() => Object.keys(playerList || {}), [playerList]);
+    useEffect(() => { if (mode === 'list' && teams.length > 0 && !team) setTeam(teams[0]); }, [mode, teams, team]);
+    const hasData = teams.length > 0;
+    return (
+        <div className="bg-slate-50 p-2 rounded-md border border-slate-200">
+            <div className="flex justify-between items-center mb-1">
+                <label className="text-xs font-bold text-gray-700">{label}</label>
+                <button onClick={() => setMode(mode === 'list' ? 'manual' : 'list')} className="text-[10px] flex items-center gap-1 text-blue-600 hover:text-blue-800">{mode === 'list' ? <><Keyboard size={12}/> 手入力</> : <><ListIcon size={12}/> リスト</>}</button>
+            </div>
+            {mode === 'list' && hasData ? (
+                <div className="flex gap-2">
+                    <select className="flex-1 p-1.5 border rounded text-sm bg-white min-w-0" value={team} onChange={(e) => setTeam(e.target.value)}>{teams.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                    <select className="flex-[1.5] p-1.5 border rounded text-sm bg-white font-bold min-w-0" value={value || ''} onChange={(e) => onChange(e.target.value)}><option value="">選択...</option>{playerList[team]?.map(p => <option key={p} value={p}>{p}</option>)}</select>
+                </div>
+            ) : (<input type="text" className="w-full p-1.5 border rounded text-sm bg-white" value={value || ''} onChange={(e) => onChange(e.target.value)} placeholder="名前" />)}
+        </div>
+    );
+};
+
+// --- Modals ---
+const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message, confirmText = "実行", cancelText = "キャンセル", confirmColor = "danger" }) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 animate-in fade-in" style={{ touchAction: 'none' }}>
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden p-6 space-y-4">
+                <h3 className="font-bold text-lg text-slate-800">{title}</h3><p className="text-sm text-slate-600 whitespace-pre-wrap">{message}</p>
+                <div className="flex gap-3 pt-2"><Button variant="secondary" className="flex-1" onClick={onClose}>{cancelText}</Button><Button variant={confirmColor} className="flex-1" onClick={onConfirm}>{confirmText}</Button></div>
+            </div>
+        </div>
+    );
+};
+
+const EditModal = ({ isOpen, onClose, event, onSave, onDelete, matchInfo }) => {
+    const [editedType, setEditedType] = useState(event?.type || 'RALLY');
+    const [editedWinner, setEditedWinner] = useState(event?.winner || 'A');
+    useEffect(() => { if (event) { setEditedType(event.type); setEditedWinner(event.winner); } }, [event]);
+    if (!isOpen || !event) return null;
+    const isFault = editedType === 'FAULT';
+    const labelA = matchInfo.isDoubles ? "ペア A" : matchInfo.playerA1;
+    const labelB = matchInfo.isDoubles ? "ペア B" : matchInfo.playerB1;
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in" style={{ touchAction: 'none' }}>
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
+                <div className="bg-slate-900 text-white p-3 flex justify-between items-center"><h3 className="font-bold flex items-center gap-2"><Pencil size={16}/> 履歴を修正</h3><button onClick={onClose}><X size={20}/></button></div>
+                <div className="p-4 space-y-4">
+                    <div><label className="block text-xs font-bold text-gray-500 mb-1">イベントタイプ</label><select className="w-full p-2 border rounded bg-slate-50" value={editedType} onChange={(e) => setEditedType(e.target.value)}><option value="ACE">エース / ウィナー (サーバーP)</option><option value="RETURN_MISS">リターンミス (サーバーP)</option><option value="WINNER">レシーバー ウィナー (レシーバーP)</option><option value="ERROR">サーバーのミス (レシーバーP)</option><option value="FAULT">フォールト (失敗)</option><option value="DOUBLE_FAULT">ダブルフォールト (レシーバーP)</option></select></div>
+                    {!isFault && (<div><label className="block text-xs font-bold text-gray-500 mb-1">ポイント勝者</label><div className="flex gap-2"><button onClick={() => setEditedWinner('A')} className={`flex-1 py-2 rounded border ${editedWinner === 'A' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700'}`}>{labelA}</button><button onClick={() => setEditedWinner('B')} className={`flex-1 py-2 rounded border ${editedWinner === 'B' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-700'}`}>{labelB}</button></div></div>)}
+                    <div className="pt-2 flex gap-3"><Button variant="danger" className="flex-1" onClick={onDelete}><Trash2 size={16} className="mr-1"/> 削除</Button><Button variant="success" className="flex-[2]" onClick={() => onSave({ ...event, type: editedType, winner: editedType === 'FAULT' ? null : editedWinner })}>保存して修正</Button></div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const GasSettingsModal = ({ isOpen, onClose, gasUrl, setGasUrl, onFetchData }) => {
+    const [tempUrl, setTempUrl] = useState(gasUrl || '');
+    useEffect(() => { setTempUrl(gasUrl || ''); }, [gasUrl, isOpen]);
+    const handleSave = () => { setGasUrl(tempUrl); onClose(); };
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in" style={{ touchAction: 'none' }}>
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
+                <div className="bg-slate-900 text-white p-3 flex justify-between items-center"><h3 className="font-bold flex items-center gap-2"><Settings size={16}/> 通信設定</h3><button onClick={onClose}><X size={20}/></button></div>
+                <div className="p-6 space-y-4">
+                    <div><label className="block text-xs font-bold text-gray-500 mb-1">GAS WebアプリURL</label><input type="text" placeholder="https://script.google.com/macros/s/..." className="w-full p-2 border rounded-md text-xs text-gray-600" value={tempUrl} onChange={(e) => setTempUrl(e.target.value)} /><p className="text-[10px] text-gray-400 mt-1">※Slack連携/Drive保存/選手データ取得に使用します。</p></div>
+                    <Button className="w-full flex gap-2 items-center justify-center" variant="secondary" onClick={() => onFetchData(tempUrl)}><Download size={16}/> 選手データを更新</Button>
+                    <div className="h-px bg-slate-100 my-2"></div>
+                    <Button className="w-full" onClick={handleSave}>設定を保存</Button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const GasModal = ({ isOpen, onClose, matchInfo, currentScore, onSend, onResetRequest }) => {
+    if (!isOpen) return null;
+    const nameA = matchInfo.isDoubles ? (matchInfo.playerA1 + "・" + matchInfo.playerA2) : matchInfo.playerA1;
+    const nameB = matchInfo.isDoubles ? (matchInfo.playerB1 + "・" + matchInfo.playerB2) : matchInfo.playerB1;
+    const handleSendScore = () => {
+        let status = "試合開始";
+        const result = currentScore.lastGameResult;
+        if (result) {
+            const { serverSide, winnerSide } = result;
+            if (winnerSide === 'A') { status = serverSide === 'A' ? "キープしました" : "ブレイクしました"; }
+            else { status = serverSide === 'B' ? "キープされました" : "ブレイクされました"; }
+        }
+        const message = `${matchInfo.matchName}\n${nameA} vs ${nameB}\n${currentScore.gamesA}-${currentScore.gamesB} ${status}`;
+        onSend('score_update', { text: message });
+        onClose();
+    };
+    const handleSendResult = () => {
+        onSend('match_finish', { 
+            text: `🏆 *${matchInfo.matchName}* (試合終了)\n${nameA} vs ${nameB}\nFinal: ${currentScore.setsA}-${currentScore.setsB} (${currentScore.gamesA}-${currentScore.gamesB})`,
+            fileName: `${matchInfo.matchName}_${nameA}vs${nameB}.csv`,
+            saveToDrive: true 
+        });
+        onClose();
+    };
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in" style={{ touchAction: 'none' }}>
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
+                <div className="bg-slate-900 text-white p-3 flex justify-between items-center"><h3 className="font-bold flex items-center gap-2"><CloudUpload size={16}/> Slack/Drive連携</h3><button onClick={onClose}><X size={20}/></button></div>
+                <div className="p-6 space-y-4">
+                    <Button className="w-full flex gap-2 items-center justify-center" size="lg" onClick={handleSendScore}><Share2 size={20}/> 途中経過をSlackへ通知</Button>
+                    <div className="h-px bg-slate-100 my-2"></div>
+                    <Button className="w-full flex gap-2 items-center justify-center" variant="success" size="lg" onClick={handleSendResult}><Save size={20}/> 結果CSVをDriveへ保存 & 通知</Button>
+                    <div className="h-px bg-slate-100 my-2"></div>
+                    <Button className="w-full flex gap-2 items-center justify-center" variant="danger" onClick={onResetRequest}><LogOut size={20}/> 試合を中断して新しい記録へ</Button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- Main Application ---
+export default function App() {
+    const [screen, setScreen] = useState('setup');
+    const [showHistory, setShowHistory] = useState(false);
+    const [showGasModal, setShowGasModal] = useState(false);
+    const [showSettingsModal, setShowSettingsModal] = useState(false);
+    const [showResetConfirm, setShowResetConfirm] = useState(false);
+    
+    const [matchInfo, setMatchInfo] = useState({
+        matchName: '練習試合', isDoubles: false,
+        playerA1: 'Player A1', playerA2: 'Player A2',
+        playerB1: 'Player B1', playerB2: 'Player B2',
+        matchType: '1set', setsToWin: 1, gamesToWinSet: 6, tiebreakAt: 6, noAd: false, 
+        serverFirst: 'A', gasUrl: DEFAULT_GAS_URL
+    });
+
+    const [playerList, setPlayerList] = useState({});
+    const [currentServerPlayer, setCurrentServerPlayer] = useState('A1');
+
+    useEffect(() => {
+        const savedData = localStorage.getItem('tennis_player_list');
+        if (savedData) { try { setPlayerList(JSON.parse(savedData)); } catch(e) { setPlayerList(DEFAULT_PLAYER_LIST); } } 
+        else { setPlayerList(DEFAULT_PLAYER_LIST); }
+        const savedGasUrl = localStorage.getItem('tennis_gas_url');
+        if (savedGasUrl) setMatchInfo(prev => ({ ...prev, gasUrl: savedGasUrl }));
+    }, []);
+
+    const [history, setHistory] = useState([]); 
+    const [editingEventIndex, setEditingEventIndex] = useState(null);
+
+    // Actions
+    const handleUpdateGasUrl = (url) => {
+        setMatchInfo(prev => ({ ...prev, gasUrl: url }));
+        localStorage.setItem('tennis_gas_url', url);
+    };
+    const handlePoint = (type, winner) => {
+        if (currentScore.winner) return;
+        setHistory(prev => [...prev, { id: Date.now(), timestamp: new Date().toISOString(), type, winner, serverPlayer: currentServerPlayer }]);
+    };
+    const handleUndo = () => { if (history.length > 0) setHistory(prev => prev.slice(0, -1)); };
+    const handleUpdateHistory = (updatedEvent) => {
+        setHistory(prev => { const newHist = [...prev]; if (editingEventIndex !== null) newHist[editingEventIndex] = updatedEvent; return newHist; });
+        setEditingEventIndex(null);
+    };
+    const handleDeleteHistory = () => { setHistory(prev => prev.filter((_, i) => i !== editingEventIndex)); setEditingEventIndex(null); };
+    const confirmReset = () => setShowResetConfirm(true); 
+    const executeReset = () => { setHistory([]); setScreen('setup'); setShowGasModal(false); setShowResetConfirm(false); };
+
+    // Core Logic
+    const { currentScore, matchStats, timeline } = useMemo(() => {
+        let state = { setsA: 0, setsB: 0, gamesA: 0, gamesB: 0, pointsA: 0, pointsB: 0, isTiebreak: false, winner: null, currentServerSide: matchInfo.serverFirst, gameServerSide: matchInfo.serverFirst, lastGameResult: null };
+        const initStat = { totalPoints: 0, serves: 0, serves1st: 0, firstIn: 0, faults: 0, doubleFaults: 0, aces: 0, returnMissesInduced: 0 };
+        let stats = { A1: { ...initStat }, A2: { ...initStat }, B1: { ...initStat }, B2: { ...initStat } };
+        let statsPair = { A: { totalPoints: 0, serves: 0, serves1st: 0, firstIn: 0, faults: 0, doubleFaults: 0, aces: 0 }, B: { totalPoints: 0, serves: 0, serves1st: 0, firstIn: 0, faults: 0, doubleFaults: 0, aces: 0 } };
+        let gameStats = [];
+        let tempGameStats = { gameIndex: 1, serverPlayer: null, stats: { serves: 0, serves1st: 0, firstIn: 0, faults: 0, doubleFaults: 0 } };
+
+        const pushGameStats = (serverPlayerID) => {
+            const s = tempGameStats.stats;
+            const rate1st = s.serves1st === 0 ? 0 : Math.round((s.firstIn / s.serves1st) * 100);
+            const totalIn = s.serves - s.faults - s.doubleFaults;
+            const rateTotal = s.serves === 0 ? 0 : Math.round((totalIn / s.serves) * 100);
+            gameStats.push({ gameIndex: tempGameStats.gameIndex, serverPlayer: serverPlayerID, stats: { rate1st, rateTotal } });
+            tempGameStats.gameIndex++; 
+            tempGameStats.stats = { serves: 0, serves1st: 0, firstIn: 0, faults: 0, doubleFaults: 0 };
+        };
+
+        const calculatedTimeline = [];
+        let isSecondServe = false;
+
+        history.forEach((rawEvent) => {
+            const eventServerPlayer = rawEvent.serverPlayer;
+            const eventServerSide = eventServerPlayer ? eventServerPlayer.charAt(0) : state.currentServerSide;
+
+            if (eventServerPlayer && stats[eventServerPlayer]) {
+                const s = stats[eventServerPlayer];
+                const ts = tempGameStats.stats;
+                const ps = statsPair[eventServerSide];
+
+                tempGameStats.serverPlayer = eventServerPlayer;
+
+                if (!isSecondServe) { 
+                    s.serves1st++; ts.serves1st++; ps.serves1st++;
+                }
+
+                if (rawEvent.type === 'FAULT') {
+                    s.serves++; s.faults++; ts.serves++; ts.faults++; ps.serves++; ps.faults++;
+                } else if (rawEvent.type === 'DOUBLE_FAULT') {
+                    s.serves++; s.doubleFaults++; ts.serves++; ts.doubleFaults++; ps.serves++; ps.doubleFaults++;
+                } else {
+                    s.serves++; ts.serves++; ps.serves++;
+                    if (!isSecondServe) { s.firstIn++; ts.firstIn++; ps.firstIn++; }
+                    if (rawEvent.type === 'ACE') { s.aces++; ps.aces++; }
+                    if (rawEvent.type === 'RETURN_MISS') s.returnMissesInduced++;
+                }
+            }
+
+            const timelineItem = { ...rawEvent, calculatedServerSide: eventServerSide, isSecondServe: isSecondServe, scoreSnapshot: { ...state } };
+            if (state.winner) { calculatedTimeline.push(timelineItem); return; }
+            if (rawEvent.type === 'FAULT') { isSecondServe = true; calculatedTimeline.push(timelineItem); return; }
+            isSecondServe = false;
+            
+            let winnerSide = rawEvent.winner;
+            if (rawEvent.type === 'DOUBLE_FAULT') winnerSide = eventServerSide === 'A' ? 'B' : 'A';
+            if (winnerSide) {
+                statsPair[winnerSide].totalPoints++;
+            }
+
+            if (!state.winner) {
+                if (state.isTiebreak) {
+                    if (winnerSide === 'A') state.pointsA++; else state.pointsB++;
+                    if ((state.pointsA >= 7 || state.pointsB >= 7) && Math.abs(state.pointsA - state.pointsB) >= 2) {
+                        const winSetSide = state.pointsA > state.pointsB ? 'A' : 'B';
+                        state.lastGameResult = { serverSide: state.gameServerSide, winnerSide: winSetSide };
+                        if (winSetSide === 'A') state.gamesA++; else state.gamesB++;
+                        if (state.gamesA > state.gamesB) state.setsA++; else state.setsB++;
+                        pushGameStats(eventServerPlayer); 
+                        state.pointsA = 0; state.pointsB = 0; state.isTiebreak = false; state.gamesA = 0; state.gamesB = 0; 
+                        if (state.setsA >= matchInfo.setsToWin) state.winner = 'A'; else if (state.setsB >= matchInfo.setsToWin) state.winner = 'B'; else state.gameServerSide = (state.gameServerSide === 'A' ? 'B' : 'A');
+                    }
+                } else {
+                    if (winnerSide === 'A') state.pointsA++; else state.pointsB++;
+                    const hasAd = state.pointsA >= 3 && state.pointsB >= 3;
+                    let gameFinished = false;
+                    if (hasAd) { if (matchInfo.noAd && state.pointsA === 4 && state.pointsB === 4) {} if (state.pointsA > state.pointsB + 1) { state.gamesA++; gameFinished = true; } else if (state.pointsB > state.pointsA + 1) { state.gamesB++; gameFinished = true; } } else { if (state.pointsA > 3) { state.gamesA++; gameFinished = true; } else if (state.pointsB > 3) { state.gamesB++; gameFinished = true; } }
+                    if (gameFinished) {
+                        const winGameSide = state.pointsA > state.pointsB ? 'A' : 'B';
+                        state.lastGameResult = { serverSide: state.gameServerSide, winnerSide: winGameSide };
+                        pushGameStats(eventServerPlayer); 
+                        state.pointsA = 0; state.pointsB = 0; state.gameServerSide = (state.gameServerSide === 'A' ? 'B' : 'A'); 
+                        let setFinished = false;
+                        const target = matchInfo.gamesToWinSet;
+                        if (state.gamesA === matchInfo.tiebreakAt && state.gamesB === matchInfo.tiebreakAt) { state.isTiebreak = true; } else { if ((state.gamesA >= target && state.gamesA >= state.gamesB + 2) || (state.gamesA === target + 1 && state.gamesB === target - 1)) setFinished = true; else if ((state.gamesB >= target && state.gamesB >= state.gamesA + 2) || (state.gamesB === target + 1 && state.gamesA === target - 1)) setFinished = true; }
+                        if (setFinished) { if (state.gamesA > state.gamesB) state.setsA++; else state.setsB++; if (state.setsA >= matchInfo.setsToWin) state.winner = 'A'; else if (state.setsB >= matchInfo.setsToWin) state.winner = 'B'; else { state.gamesA = 0; state.gamesB = 0; } }
+                    }
+                }
+            }
+            if (!state.winner) { if (state.isTiebreak) { const totalPts = state.pointsA + state.pointsB; const seq = totalPts % 4; if (seq === 0 || seq === 3) state.currentServerSide = state.gameServerSide; else state.currentServerSide = (state.gameServerSide === 'A' ? 'B' : 'A'); } else { state.currentServerSide = state.gameServerSide; } } else { state.currentServerSide = null; }
+            calculatedTimeline.push(timelineItem);
+        });
+        return { currentScore: state, matchStats: { stats, statsPair, gameStats }, timeline: calculatedTimeline };
+    }, [history, matchInfo]);
+
+    useEffect(() => {
+        if (!currentScore.currentServerSide) return;
+        const side = currentScore.currentServerSide;
+        const currentPlayerSide = currentServerPlayer.charAt(0);
+        if (side !== currentPlayerSide) {
+            if (matchInfo.isDoubles) {
+                let lastServerForSide = null;
+                for (let i = timeline.length - 1; i >= 0; i--) { if (timeline[i].calculatedServerSide === side) { lastServerForSide = timeline[i].serverPlayer; break; } }
+                if (lastServerForSide) { const nextNum = lastServerForSide.endsWith('1') ? '2' : '1'; setCurrentServerPlayer(side + nextNum); } else { setCurrentServerPlayer(side + '1'); }
+            } else { setCurrentServerPlayer(side + '1'); }
+        }
+    }, [currentScore.currentServerSide, currentServerPlayer, matchInfo.isDoubles, timeline]);
+
+    const isDeuce = !currentScore.isTiebreak && !matchInfo.noAd && currentScore.pointsA >= 3 && currentScore.pointsB >= 3 && currentScore.pointsA === currentScore.pointsB;
+    const currentSide = currentScore.isTiebreak ? ((currentScore.pointsA + currentScore.pointsB) % 2 === 0 ? 'Deuce (右)' : 'Ad (左)') : ((currentScore.pointsA + currentScore.pointsB) % 2 === 0 ? 'Deuce (右)' : 'Ad (左)'); 
+    const nextIsSecondServe = timeline.length > 0 && timeline[timeline.length - 1].type === 'FAULT';
+    const displayPointA = currentScore.isTiebreak ? currentScore.pointsA : (isDeuce ? "Deuce" : (currentScore.pointsA > 3 && currentScore.pointsB > 3 ? (currentScore.pointsA > currentScore.pointsB ? "Ad" : "40") : (POINTS[Math.min(currentScore.pointsA, 4)] || currentScore.pointsA)));
+    const displayPointB = currentScore.isTiebreak ? currentScore.pointsB : (isDeuce ? "Deuce" : (currentScore.pointsB > 3 && currentScore.pointsA > 3 ? (currentScore.pointsB > currentScore.pointsA ? "Ad" : "40") : (POINTS[Math.min(currentScore.pointsB, 4)] || currentScore.pointsB)));
+    const currentServerStats = (() => { if (!matchStats.stats[currentServerPlayer]) return { r1: 0, rT: 0 }; const s = matchStats.stats[currentServerPlayer]; const r1 = s.serves1st === 0 ? 0 : Math.round((s.firstIn / s.serves1st) * 100); const tIn = s.serves - s.faults - s.doubleFaults; const rT = s.serves === 0 ? 0 : Math.round((tIn / s.serves) * 100); return { r1, rT }; })();
+
+    const generateCSV = () => {
+        let csvContent = "Time,Event,Server Name,Point Winner Name,Point Winner Type,Score(A-B),Game(A-B),Set(A-B),ServeType\n";
+        timeline.forEach(h => {
+            const s = h.scoreSnapshot;
+            let serverName = "";
+            if (h.serverPlayer === 'A1') serverName = matchInfo.playerA1; else if (h.serverPlayer === 'A2') serverName = matchInfo.playerA2; else if (h.serverPlayer === 'B1') serverName = matchInfo.playerB1; else if (h.serverPlayer === 'B2') serverName = matchInfo.playerB2;
+            let winnerName = "";
+            if (h.winner === 'A') winnerName = matchInfo.isDoubles ? "Pair A" : matchInfo.playerA1; else if (h.winner === 'B') winnerName = matchInfo.isDoubles ? "Pair B" : matchInfo.playerB1;
+            const winnerType = h.winner ? (h.winner === h.calculatedServerSide ? 'Server' : 'Receiver') : '-';
+            const serveType = h.type === 'FAULT' ? 'Fault' : (h.isSecondServe ? '2nd' : '1st');
+            csvContent += `${h.timestamp},${h.type},${serverName},${winnerName},${winnerType},"${s.pointsA}-${s.pointsB}","${s.gamesA}-${s.gamesB}","${s.setsA}-${s.setsB}",${serveType}\n`;
+        });
+        return csvContent;
+    };
+    const exportCSV = () => { const csvContent = "data:text/csv;charset=utf-8," + generateCSV(); const encodedUri = encodeURI(csvContent); const link = document.createElement("a"); link.setAttribute("href", encodedUri); link.setAttribute("download", `tennis_match_${new Date().toISOString().slice(0,10)}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link); };
+    const sendToGas = (type, payload) => { if (!matchInfo.gasUrl) return; let body = { type, ...payload }; if (type === 'match_finish') body.csvData = generateCSV(); fetch(matchInfo.gasUrl, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body) }).then(() => { alert('送信リクエストを送りました'); }).catch(err => { alert('送信エラー: ' + err.message); }); };
+    const fetchPlayerData = (url) => { if (!url) { alert('GAS URLが設定されていません'); return; } fetch(url, { method: 'GET', mode: 'cors' }).then(res => { if (!res.ok) { throw new Error(`HTTP Error: ${res.status}`); } return res.json(); }).then(data => { if (data.error) { alert('データ取得エラー: ' + data.error); } else { setPlayerList(data); localStorage.setItem('tennis_player_list', JSON.stringify(data)); alert('選手データを更新しました'); } }).catch(err => { alert('データ取得に失敗しました: ' + err.message); }); };
+
+    if (screen === 'setup') {
+        return (
+            <div className="min-h-screen p-4 flex items-center justify-center max-w-md mx-auto bg-[#f0fdf4] select-none relative">
+                <button onClick={() => setShowSettingsModal(true)} className="absolute top-4 right-4 p-2 bg-white rounded-full shadow text-gray-500 hover:text-blue-600 z-10"><Settings size={20} /></button>
+                <Card className="w-full p-6">
+                    <div className="flex items-center gap-2 mb-6 text-blue-800"><Trophy className="w-6 h-6" /><h1 className="text-2xl font-bold">試合設定</h1></div>
+                    <div className="space-y-4">
+                        <div><label className="block text-sm font-medium text-gray-700 mb-1">試合名</label><input type="text" className="w-full p-2 border rounded-md" value={matchInfo.matchName} onChange={(e) => setMatchInfo({...matchInfo, matchName: e.target.value})}/></div>
+                        <div className="flex items-center gap-2 pb-2 border-b border-gray-100"><input type="checkbox" id="isDoubles" checked={matchInfo.isDoubles} onChange={e => setMatchInfo({...matchInfo, isDoubles: e.target.checked})} className="w-4 h-4 text-blue-600 rounded" /><label htmlFor="isDoubles" className="text-sm font-bold text-gray-700">ダブルス</label></div>
+                        <div className="space-y-3">
+                            <div className="bg-blue-50 p-3 rounded"><div className="text-xs text-blue-700 font-bold mb-2">ペア A</div><PlayerSelectInput label="選手 A1" value={matchInfo.playerA1} onChange={(val) => setMatchInfo(prev => ({ ...prev, playerA1: val }))} playerList={playerList}/>{matchInfo.isDoubles && (<div className="mt-2"><PlayerSelectInput label="選手 A2" value={matchInfo.playerA2} onChange={(val) => setMatchInfo(prev => ({ ...prev, playerA2: val }))} playerList={playerList}/></div>)}</div>
+                            <div className="bg-red-50 p-3 rounded"><div className="text-xs text-red-700 font-bold mb-2">ペア B</div><PlayerSelectInput label="選手 B1" value={matchInfo.playerB1} onChange={(val) => setMatchInfo(prev => ({ ...prev, playerB1: val }))} playerList={playerList}/>{matchInfo.isDoubles && (<div className="mt-2"><PlayerSelectInput label="選手 B2" value={matchInfo.playerB2} onChange={(val) => setMatchInfo(prev => ({ ...prev, playerB2: val }))} playerList={playerList}/></div>)}</div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div><label className="block text-sm font-medium text-gray-700 mb-1">マッチ形式</label><select className="w-full p-2 border rounded-md bg-white" value={matchInfo.matchType} onChange={(e) => { let newConfig = { matchType: e.target.value }; switch(e.target.value) { case '1set': newConfig = { ...newConfig, setsToWin: 1, gamesToWinSet: 6, tiebreakAt: 6 }; break; case '8game': newConfig = { ...newConfig, setsToWin: 1, gamesToWinSet: 8, tiebreakAt: 7 }; break; case '3set': newConfig = { ...newConfig, setsToWin: 2, gamesToWinSet: 6, tiebreakAt: 6 }; break; case '4game': newConfig = { ...newConfig, setsToWin: 1, gamesToWinSet: 4, tiebreakAt: 4 }; break; } setMatchInfo(prev => ({ ...prev, ...newConfig })); }}><option value="1set">1セットマッチ</option><option value="8game">8ゲームマッチ</option><option value="3set">3セットマッチ</option><option value="4game">4ゲーム先取</option></select></div>
+                            <div><label className="block text-sm font-medium text-gray-700 mb-1">最初のサーバー</label><div className="flex bg-gray-100 rounded-md p-1">{['A', 'B'].map(p => (<button key={p} onClick={() => setMatchInfo({...matchInfo, serverFirst: p})} className={`flex-1 py-1 text-sm rounded ${matchInfo.serverFirst === p ? 'bg-white shadow text-blue-600 font-bold' : 'text-gray-500'}`}>{p === 'A' ? 'A' : 'B'}</button>))}</div></div>
+                        </div>
+                        <div className="flex items-center gap-2 pt-2"><input type="checkbox" id="noad" checked={matchInfo.noAd} onChange={e => setMatchInfo({...matchInfo, noAd: e.target.checked})} className="w-4 h-4 text-blue-600 rounded" /><label htmlFor="noad" className="text-gray-700">ノーアドバンテージ</label></div>
+                        <Button className="w-full mt-6" size="lg" onClick={() => setScreen('match')}>試合開始</Button>
+                    </div>
+                </Card>
+                <GasSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} gasUrl={matchInfo.gasUrl} setGasUrl={handleUpdateGasUrl} onFetchData={fetchPlayerData} />
+            </div>
+        );
+    }
+
+    return (
+        <div className="max-w-md mx-auto min-h-screen flex flex-col bg-slate-50 relative select-none">
+            {/* Header */}
+            <div className="bg-slate-900 text-white p-4 pb-6 rounded-b-3xl shadow-lg sticky top-0 z-10 shrink-0">
+                <div className="flex justify-between items-center mb-4 opacity-70 text-sm"><span>{matchInfo.matchName}</span><div className="flex gap-2 items-center"><button onClick={() => setShowSettingsModal(true)} className="p-1 hover:text-blue-300"><Settings size={20} /></button><button onClick={() => setScreen(screen === 'match' ? 'stats' : 'match')} className="p-1 hover:text-blue-300">{screen === 'match' ? <Activity size={20}/> : <Zap size={20}/>}</button>{screen === 'match' && (<><button onClick={() => setShowGasModal(true)} className="p-1 hover:text-blue-300"><CloudUpload size={20} /></button><button onClick={() => setShowHistory(!showHistory)} className={`p-1 hover:text-blue-300 ${showHistory ? 'text-blue-400' : ''}`}><Menu size={20} /></button></>)}<button onClick={exportCSV} className="p-1 hover:text-green-300"><Save size={20}/></button></div></div>
+                <div className="flex justify-between items-center text-center">
+                    <div className={`flex-1 transition-all ${currentScore.currentServerSide === 'A' ? 'scale-105' : 'opacity-80'}`}>
+                        <div className="text-xs mb-1 text-slate-400">Pair A</div><div className="font-bold text-lg leading-tight"><div>{matchInfo.playerA1}</div>{matchInfo.isDoubles && <div className="text-sm">{matchInfo.playerA2}</div>}</div>
+                        {currentScore.currentServerSide === 'A' && (<div className="mt-2 flex flex-col items-center animate-in fade-in"><div className="text-yellow-400 text-xs flex justify-center items-center gap-1 font-bold"><div className="w-2 h-2 rounded-full bg-yellow-400"></div>Server</div>{matchInfo.isDoubles && (<div className="flex gap-1 mt-1"><button onClick={() => setCurrentServerPlayer('A1')} className={`text-[10px] px-2 py-0.5 rounded border ${currentServerPlayer === 'A1' ? 'bg-yellow-400 text-black border-yellow-400' : 'text-slate-400 border-slate-600'}`}>{matchInfo.playerA1.slice(0,4)}..</button><button onClick={() => setCurrentServerPlayer('A2')} className={`text-[10px] px-2 py-0.5 rounded border ${currentServerPlayer === 'A2' ? 'bg-yellow-400 text-black border-yellow-400' : 'text-slate-400 border-slate-600'}`}>{matchInfo.playerA2.slice(0,4)}..</button></div>)}<div className="text-xs text-slate-300 mt-1 font-bold leading-tight flex flex-col gap-0.5"><span>1st: {currentServerStats.r1}%</span><span>Total: {currentServerStats.rT}%</span></div></div>)}
+                    </div>
+                    <div className="flex flex-col items-center mx-2 bg-slate-800 px-3 py-2 rounded-lg"><div className="text-xs text-slate-400 mb-1">SETS</div><div className="flex gap-4 text-xl font-mono font-bold"><span>{currentScore.setsA}</span><span className="text-slate-500">-</span><span>{currentScore.setsB}</span></div><div className="text-xs text-slate-400 mt-2 mb-1">GAMES</div><div className="flex gap-4 text-lg font-mono text-blue-300"><span>{currentScore.gamesA}</span><span className="text-slate-600">-</span><span>{currentScore.gamesB}</span></div></div>
+                    <div className={`flex-1 transition-all ${currentScore.currentServerSide === 'B' ? 'scale-105' : 'opacity-80'}`}>
+                        <div className="text-xs mb-1 text-slate-400">Pair B</div><div className="font-bold text-lg leading-tight"><div>{matchInfo.playerB1}</div>{matchInfo.isDoubles && <div className="text-sm">{matchInfo.playerB2}</div>}</div>
+                        {currentScore.currentServerSide === 'B' && (<div className="mt-2 flex flex-col items-center animate-in fade-in"><div className="text-yellow-400 text-xs flex justify-center items-center gap-1 font-bold"><div className="w-2 h-2 rounded-full bg-yellow-400"></div>Server</div>{matchInfo.isDoubles && (<div className="flex gap-1 mt-1"><button onClick={() => setCurrentServerPlayer('B1')} className={`text-[10px] px-2 py-0.5 rounded border ${currentServerPlayer === 'B1' ? 'bg-yellow-400 text-black border-yellow-400' : 'text-slate-400 border-slate-600'}`}>{matchInfo.playerB1.slice(0,4)}..</button><button onClick={() => setCurrentServerPlayer('B2')} className={`text-[10px] px-2 py-0.5 rounded border ${currentServerPlayer === 'B2' ? 'bg-yellow-400 text-black border-yellow-400' : 'text-slate-400 border-slate-600'}`}>{matchInfo.playerB2.slice(0,4)}..</button></div>)}<div className="text-xs text-slate-300 mt-1 font-bold leading-tight flex flex-col gap-0.5"><span>1st: {currentServerStats.r1}%</span><span>Total: {currentServerStats.rT}%</span></div></div>)}
+                    </div>
+                </div>
+                <div className="mt-6 flex justify-center items-center gap-4"><div className={`${isDeuce ? "text-3xl" : "text-5xl"} font-mono font-bold ${displayPointA === 'Ad' || displayPointA === 'Deuce' ? 'text-yellow-400' : ''}`}>{displayPointA}</div><div className="text-slate-600 text-2xl">:</div><div className={`${isDeuce ? "text-3xl" : "text-5xl"} font-mono font-bold ${displayPointB === 'Ad' || displayPointB === 'Deuce' ? 'text-yellow-400' : ''}`}>{displayPointB}</div></div>
+                <div className="mt-4 flex justify-between text-xs font-mono bg-slate-800 rounded px-3 py-1 text-slate-300"><span>SIDE: {currentSide}</span><span>SERVE: {nextIsSecondServe ? '2nd' : '1st'}</span></div>
+            </div>
+
+            {screen === 'stats' && (
+                <div className="p-4 space-y-4 animate-in fade-in zoom-in duration-300 pb-12 overflow-y-auto">
+                    <Card className="p-4 mb-4"><StatsGraphs gameStats={matchStats.gameStats} matchInfo={matchInfo} /></Card>
+                    <Card className="p-4">
+                        <div className="text-sm font-bold text-gray-700 mb-2 border-b pb-1">ペア合計スタッツ</div>
+                        <div className="grid grid-cols-3 gap-2 text-center text-sm mb-6"><div className="font-bold text-blue-600">Pair A</div><div className="text-gray-400">項目</div><div className="font-bold text-red-600">Pair B</div><div>{matchStats.statsPair.A.totalPoints}</div><div className="text-xs text-gray-500 py-1">総ポイント</div><div>{matchStats.statsPair.B.totalPoints}</div>
+                        <div>{matchStats.statsPair.A.aces}</div><div className="text-xs text-gray-500 py-1">エース/ウィナー</div><div>{matchStats.statsPair.B.aces}</div>
+                        <div>{matchStats.statsPair.A.doubleFaults}</div><div className="text-xs text-gray-500 py-1">ダブルフォルト</div><div>{matchStats.statsPair.B.doubleFaults}</div>
+                        <div>{matchStats.statsPair.A.serves > 0 ? Math.round((matchStats.statsPair.A.firstIn / matchStats.statsPair.A.serves) * 100) : 0}%</div><div className="text-xs text-gray-500 py-1">1stサーブ成功率</div><div>{matchStats.statsPair.B.serves > 0 ? Math.round((matchStats.statsPair.B.firstIn / matchStats.statsPair.B.serves) * 100) : 0}%</div>
+                        </div>
+
+                        <div className="text-sm font-bold text-gray-700 mb-2 border-b pb-1">個人別サーブスタッツ</div>
+                        {[{ p: 'A1', name: matchInfo.playerA1, bg: 'bg-blue-50' }, ...(matchInfo.isDoubles ? [{ p: 'A2', name: matchInfo.playerA2, bg: 'bg-blue-50' }] : []), { p: 'B1', name: matchInfo.playerB1, bg: 'bg-red-50' }, ...(matchInfo.isDoubles ? [{ p: 'B2', name: matchInfo.playerB2, bg: 'bg-red-50' }] : [])].map(player => {
+                            const s = matchStats.stats[player.p];
+                            const r1 = s.serves1st === 0 ? 0 : Math.round((s.firstIn / s.serves1st) * 100);
+                            const tIn = s.serves - s.faults - s.doubleFaults;
+                            const rT = s.serves === 0 ? 0 : Math.round((tIn / s.serves) * 100);
+                            return (
+                                <div key={player.p} className={`${player.bg} p-2 rounded mb-2 text-sm`}><div className="font-bold mb-1">{player.name}</div><div className="flex justify-between text-xs text-gray-600"><span>1st成功: {r1}% ({s.firstIn}/{s.serves1st})</span><span>全成功: {rT}%</span><span>DF: {s.doubleFaults}</span><span>Ace: {s.aces}</span></div></div>
+                            );
+                        })}
+                    </Card>
+                    <Button variant="secondary" className="w-full mt-4" onClick={() => setScreen('match')}>スコア入力に戻る</Button>
+                </div>
+            )}
+
+            {screen === 'match' && !currentScore.winner && (
+                <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+                    {showHistory ? (
+                        <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-slate-50 border-t border-slate-200 animate-in slide-in-from-top-4">
+                            <div className="text-xs font-bold text-slate-400 mb-2 px-1 flex justify-between items-center"><span>ポイント履歴</span><button onClick={() => setShowHistory(false)}><X size={16}/></button></div>
+                            {[...timeline].reverse().map((event, reverseIndex) => {
+                                const realIndex = timeline.length - 1 - reverseIndex;
+                                const isWinA = event.winner === 'A';
+                                return (
+                                    <div key={event.id} className="bg-white p-2 rounded shadow-sm border border-slate-100 flex justify-between items-center"><div className="flex items-center gap-3"><div className="flex flex-col items-center w-8"><span className="text-[10px] text-slate-400">{event.calculatedServerSide}: {event.serverPlayer}</span><span className="font-mono font-bold text-sm text-slate-600">{event.scoreSnapshot.gamesA}-{event.scoreSnapshot.gamesB}</span></div><div className="flex flex-col"><div className="flex items-baseline gap-2"><span className={`font-bold ${isWinA ? 'text-blue-600' : 'text-red-600'}`}>{isWinA ? 'Pair A' : 'Pair B'}</span><span className="text-xs text-slate-500 bg-slate-100 px-1 rounded">{event.type}</span></div></div></div><button onClick={() => setEditingEventIndex(realIndex)} className="p-2 text-slate-400 hover:text-blue-600"><Pencil size={16} /></button></div>
+                                );
+                            })}
+                        </div>
+                    ) : (<div className="flex-1 bg-slate-50 flex items-center justify-center opacity-10"><div className="text-6xl text-slate-300 pointer-events-none select-none">🎾</div></div>)}
+                    <div className="p-3 bg-white border-t border-slate-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-20 shrink-0 pb-8">
+                        <div className="grid grid-cols-2 gap-2 mb-2">
+                            <Button variant="warning" className="h-16 relative" onClick={() => handlePoint('FAULT', currentScore.currentServerSide === 'A' ? 'B' : 'A')} disabled={nextIsSecondServe}><span className="flex flex-col items-center"><span>FAULT</span><span className="text-[10px] opacity-75">フォールト</span></span></Button>
+                            {nextIsSecondServe && (<div className="absolute inset-0 bg-white/50 z-20 flex items-center justify-center pointer-events-none rounded-lg left-0 w-1/2 ml-0"><span className="text-red-600 font-bold bg-white px-2 py-1 rounded shadow text-xs">2nd Serve</span></div>)}
+                            <Button variant="danger" className="h-16" onClick={() => handlePoint('DOUBLE_FAULT', currentScore.currentServerSide === 'A' ? 'B' : 'A')} disabled={!nextIsSecondServe}><span className="flex flex-col items-center"><span>DBL FAULT</span><span className="text-[10px] opacity-75">ダブルフォールト</span></span></Button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-2">
+                                <Button variant="primary" className="h-16 w-full" onClick={() => handlePoint('ACE', currentScore.currentServerSide)}><span className="flex flex-col items-center leading-tight"><span>サーバー P</span><span className="text-[10px] opacity-80">エース / ウィナー</span></span></Button>
+                                <Button variant="primary" className="h-16 w-full opacity-90" onClick={() => handlePoint('RETURN_MISS', currentScore.currentServerSide)}><span className="flex flex-col items-center leading-tight"><span>サーバー P</span><span className="text-[9px] opacity-80 whitespace-nowrap scale-90">レシーバーミス/イレギュラー</span></span></Button>
+                            </div>
+                            <div className="space-y-2">
+                                <Button variant="secondary" className="h-16 w-full border-red-200 text-red-700 bg-red-50" onClick={() => handlePoint('WINNER', currentScore.currentServerSide === 'A' ? 'B' : 'A')}><span className="flex flex-col items-center leading-tight"><span>レシーバー P</span><span className="text-[10px] opacity-80">ウィナー</span></span></Button>
+                                <Button variant="secondary" className="h-16 w-full border-red-200 text-red-700 bg-red-50" onClick={() => handlePoint('ERROR', currentScore.currentServerSide === 'A' ? 'B' : 'A')}><span className="flex flex-col items-center leading-tight"><span>レシーバー P</span><span className="text-[9px] opacity-80 whitespace-nowrap scale-90">サーバーミス/イレギュラー</span></span></Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {currentScore.winner && (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 animate-in zoom-in">
+                    <Trophy size={64} className="text-yellow-500 mb-4" /><h2 className="text-3xl font-bold text-slate-800 mb-2">Match Finished!</h2><p className="text-xl text-slate-600 mb-8">Winner: {currentScore.winner === 'A' ? "Pair A" : "Pair B"}</p>
+                    <div className="flex flex-col gap-4 w-full"><div className="flex gap-4"><Button className="flex-1" onClick={() => setScreen('stats')}>スタッツを見る</Button><Button variant="secondary" onClick={exportCSV}>CSV保存(ローカル)</Button></div><Button className="w-full flex gap-2 items-center justify-center" variant="success" size="lg" onClick={() => setShowGasModal(true)}><CloudUpload size={20}/> 結果をSlack/Driveへ保存</Button><Button className="w-full flex gap-2 items-center justify-center" variant="danger" size="lg" onClick={confirmReset}><RefreshCw size={20}/> 新しい記録を始める</Button></div>
+                </div>
+            )}
+
+            <EditModal isOpen={editingEventIndex !== null} onClose={() => setEditingEventIndex(null)} event={editingEventIndex !== null ? history[editingEventIndex] : null} onSave={handleUpdateHistory} onDelete={handleDeleteHistory} matchInfo={matchInfo} />
+            <GasModal isOpen={showGasModal} onClose={() => setShowGasModal(false)} matchInfo={matchInfo} currentScore={currentScore} onSend={sendToGas} onResetRequest={confirmReset} />
+            <GasSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} gasUrl={matchInfo.gasUrl} setGasUrl={handleUpdateGasUrl} onFetchData={fetchPlayerData} />
+            <ConfirmModal isOpen={showResetConfirm} onClose={() => setShowResetConfirm(false)} onConfirm={executeReset} title="新しい記録を始めますか？" message={"現在の試合記録はクリアされ、初期画面に戻ります。\n保存していないデータは完全に消去されます。"} confirmText="終了して新規作成" />
+        </div>
+    );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+    </script>
+</body>
+</html>
