@@ -46,12 +46,10 @@
             );
         };
 
+        // --- Constants ---
         const POINTS = ['0', '15', '30', '40', 'Ad'];
-        
-        // ★初期設定URL（GASのURL）
-        const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbzGVV5XjhmbJBialJy5f--xm0VVuDBGahgtf1ZPW5rX_V1kPafKPBL1WRnz8i42y4gS/exec"; 
+        const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbwWuqbncAqt5LilJJ9A50Xz7HUmzV4gxnwQf4TwiOvhRHIm5uIaGpdaejI5dnf_vCse/exec"; 
 
-        // ★初期選手データ
         const DEFAULT_PLAYER_LIST = {
             "神戸野田 男": ["川口 暖斗", "河野 晃太", "菊川 雄介", "玉田 一将", "舩岡 恵大", "小林 純平", "高橋 史生", "飯田 隼生", "小橋 悠人", "谷澤 拓真", "春田 陽向", "藤谷 柊司", "三木 望夢", "村山 蒼"],
             "神戸野田 女": ["黒木 凜", "石田 実莉", "五島 宇莉", "早見 芽衣", "山本 結貴", "石川 夕楓", "笠原 瑠那", "川中 一花", "谷口 楓"]
@@ -72,6 +70,7 @@
             const sizes = { xs: "px-2 py-1 text-xs", sm: "px-2 py-1 text-sm", md: "px-4 py-2 text-sm", lg: "px-6 py-3 text-lg", xl: "px-8 py-4 text-xl h-20" };
             return <button onClick={onClick} className={`${baseStyle} ${variants[variant]} ${sizes[size]} ${className}`} disabled={disabled}>{children}</button>;
         };
+
         const Card = ({ children, className = "" }) => <div className={`bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden ${className}`}>{children}</div>;
 
         // --- Stats Graph Component ---
@@ -104,6 +103,7 @@
                 </div>
             );
         };
+
         const StatsGraphs = ({ gameStats, matchInfo }) => {
             const players = [ { key: 'A1', name: matchInfo.playerA1, color: '#2563eb' }, { key: 'A2', name: matchInfo.playerA2, color: '#60a5fa' }, { key: 'B1', name: matchInfo.playerB1, color: '#dc2626' }, { key: 'B2', name: matchInfo.playerB2, color: '#f87171' } ];
             return ( <div> <h4 className="text-sm font-bold text-gray-600 mb-2 text-center">サーブ成功率推移 (ゲーム毎)</h4> <div className="grid grid-cols-1 gap-2"> {players.map(p => { if (!p.name) return null; const pData = gameStats.filter(g => g.serverPlayer === p.key).map(g => ({ gameIndex: g.gameIndex, rate1st: g.stats.rate1st, rateTotal: g.stats.rateTotal })); if (pData.length === 0) return null; return <SinglePlayerGraph key={p.key} data={pData} color={p.color} playerName={p.name} />; })} </div> </div> );
@@ -231,11 +231,17 @@
             const [showGasModal, setShowGasModal] = useState(false);
             const [showSettingsModal, setShowSettingsModal] = useState(false);
             const [showResetConfirm, setShowResetConfirm] = useState(false);
-            const [matchInfo, setMatchInfo] = useState({ matchName: '練習試合', isDoubles: false, playerA1: 'Player A1', playerA2: 'Player A2', playerB1: 'Player B1', playerB2: 'Player B2', matchType: '1set', setsToWin: 1, gamesToWinSet: 6, tiebreakAt: 6, noAd: false, serverFirst: 'A', gasUrl: DEFAULT_GAS_URL });
+            
+            const [matchInfo, setMatchInfo] = useState({
+                matchName: '練習試合', isDoubles: false,
+                playerA1: 'Player A1', playerA2: 'Player A2',
+                playerB1: 'Player B1', playerB2: 'Player B2',
+                matchType: '1set', setsToWin: 1, gamesToWinSet: 6, tiebreakAt: 6, noAd: false, 
+                serverFirst: 'A', gasUrl: DEFAULT_GAS_URL
+            });
+
             const [playerList, setPlayerList] = useState({});
             const [currentServerPlayer, setCurrentServerPlayer] = useState('A1');
-            const [history, setHistory] = useState([]); 
-            const [editingEventIndex, setEditingEventIndex] = useState(null);
 
             useEffect(() => {
                 const savedData = localStorage.getItem('tennis_player_list');
@@ -245,14 +251,28 @@
                 if (savedGasUrl) setMatchInfo(prev => ({ ...prev, gasUrl: savedGasUrl }));
             }, []);
 
-            const handleUpdateGasUrl = (url) => { setMatchInfo(prev => ({ ...prev, gasUrl: url })); localStorage.setItem('tennis_gas_url', url); };
-            const handlePoint = (type, winner) => { if (currentScore.winner) return; setHistory(prev => [...prev, { id: Date.now(), timestamp: new Date().toISOString(), type, winner, serverPlayer: currentServerPlayer }]); };
+            const [history, setHistory] = useState([]); 
+            const [editingEventIndex, setEditingEventIndex] = useState(null);
+
+            // Actions
+            const handleUpdateGasUrl = (url) => {
+                setMatchInfo(prev => ({ ...prev, gasUrl: url }));
+                localStorage.setItem('tennis_gas_url', url);
+            };
+            const handlePoint = (type, winner) => {
+                if (currentScore.winner) return;
+                setHistory(prev => [...prev, { id: Date.now(), timestamp: new Date().toISOString(), type, winner, serverPlayer: currentServerPlayer }]);
+            };
             const handleUndo = () => { if (history.length > 0) setHistory(prev => prev.slice(0, -1)); };
-            const handleUpdateHistory = (updatedEvent) => { setHistory(prev => { const newHist = [...prev]; if (editingEventIndex !== null) newHist[editingEventIndex] = updatedEvent; return newHist; }); setEditingEventIndex(null); };
+            const handleUpdateHistory = (updatedEvent) => {
+                setHistory(prev => { const newHist = [...prev]; if (editingEventIndex !== null) newHist[editingEventIndex] = updatedEvent; return newHist; });
+                setEditingEventIndex(null);
+            };
             const handleDeleteHistory = () => { setHistory(prev => prev.filter((_, i) => i !== editingEventIndex)); setEditingEventIndex(null); };
             const confirmReset = () => setShowResetConfirm(true); 
             const executeReset = () => { setHistory([]); setScreen('setup'); setShowGasModal(false); setShowResetConfirm(false); };
 
+            // Core Logic
             const { currentScore, matchStats, timeline } = useMemo(() => {
                 let state = { setsA: 0, setsB: 0, gamesA: 0, gamesB: 0, pointsA: 0, pointsB: 0, isTiebreak: false, winner: null, currentServerSide: matchInfo.serverFirst, gameServerSide: matchInfo.serverFirst, lastGameResult: null };
                 const initStat = { totalPoints: 0, serves: 0, serves1st: 0, firstIn: 0, faults: 0, doubleFaults: 0, aces: 0, returnMissesInduced: 0 };
@@ -260,6 +280,7 @@
                 let statsPair = { A: { totalPoints: 0, serves: 0, serves1st: 0, firstIn: 0, faults: 0, doubleFaults: 0, aces: 0 }, B: { totalPoints: 0, serves: 0, serves1st: 0, firstIn: 0, faults: 0, doubleFaults: 0, aces: 0 } };
                 let gameStats = [];
                 let tempGameStats = { gameIndex: 1, serverPlayer: null, stats: { serves: 0, serves1st: 0, firstIn: 0, faults: 0, doubleFaults: 0 } };
+
                 const pushGameStats = (serverPlayerID) => {
                     const s = tempGameStats.stats;
                     const rate1st = s.serves1st === 0 ? 0 : Math.round((s.firstIn / s.serves1st) * 100);
@@ -269,27 +290,48 @@
                     tempGameStats.gameIndex++; 
                     tempGameStats.stats = { serves: 0, serves1st: 0, firstIn: 0, faults: 0, doubleFaults: 0 };
                 };
+
                 const calculatedTimeline = [];
                 let isSecondServe = false;
 
                 history.forEach((rawEvent) => {
                     const eventServerPlayer = rawEvent.serverPlayer;
                     const eventServerSide = eventServerPlayer ? eventServerPlayer.charAt(0) : state.currentServerSide;
+
                     if (eventServerPlayer && stats[eventServerPlayer]) {
-                        const s = stats[eventServerPlayer]; const ts = tempGameStats.stats; const ps = statsPair[eventServerSide];
+                        const s = stats[eventServerPlayer];
+                        const ts = tempGameStats.stats;
+                        const ps = statsPair[eventServerSide];
+
                         tempGameStats.serverPlayer = eventServerPlayer;
-                        if (!isSecondServe) { s.serves1st++; ts.serves1st++; ps.serves1st++; }
-                        if (rawEvent.type === 'FAULT') { s.serves++; s.faults++; ts.serves++; ts.faults++; ps.serves++; ps.faults++; }
-                        else if (rawEvent.type === 'DOUBLE_FAULT') { s.serves++; s.doubleFaults++; ts.serves++; ts.doubleFaults++; ps.serves++; ps.doubleFaults++; }
-                        else { s.serves++; ts.serves++; ps.serves++; if (!isSecondServe) { s.firstIn++; ts.firstIn++; ps.firstIn++; } if (rawEvent.type === 'ACE') { s.aces++; ps.aces++; } if (rawEvent.type === 'RETURN_MISS') s.returnMissesInduced++; }
+
+                        if (!isSecondServe) { 
+                            s.serves1st++; ts.serves1st++; ps.serves1st++;
+                        }
+
+                        if (rawEvent.type === 'FAULT') {
+                            s.serves++; s.faults++; ts.serves++; ts.faults++; ps.serves++; ps.faults++;
+                        } else if (rawEvent.type === 'DOUBLE_FAULT') {
+                            s.serves++; s.doubleFaults++; ts.serves++; ts.doubleFaults++; ps.serves++; ps.doubleFaults++;
+                        } else {
+                            s.serves++; ts.serves++; ps.serves++;
+                            if (!isSecondServe) { s.firstIn++; ts.firstIn++; ps.firstIn++; }
+                            if (rawEvent.type === 'ACE') { s.aces++; ps.aces++; }
+                            if (rawEvent.type === 'RETURN_MISS') s.returnMissesInduced++;
+                        }
                     }
+
                     const timelineItem = { ...rawEvent, calculatedServerSide: eventServerSide, isSecondServe: isSecondServe, scoreSnapshot: { ...state } };
                     if (state.winner) { calculatedTimeline.push(timelineItem); return; }
                     if (rawEvent.type === 'FAULT') { isSecondServe = true; calculatedTimeline.push(timelineItem); return; }
                     isSecondServe = false;
+                    
                     let winnerSide = rawEvent.winner;
                     if (rawEvent.type === 'DOUBLE_FAULT') winnerSide = eventServerSide === 'A' ? 'B' : 'A';
-                    if (winnerSide) statsPair[winnerSide].totalPoints++;
+                    if (winnerSide) {
+                        statsPair[winnerSide].totalPoints++;
+                    }
+
                     if (!state.winner) {
                         if (state.isTiebreak) {
                             if (winnerSide === 'A') state.pointsA++; else state.pointsB++;
@@ -379,7 +421,7 @@
                 });
                 csvContent += "\n";
 
-                // 3. Logs (Updated Header to Japanese as requested)
+                // 3. Logs (Matching PDF format)
                 csvContent += "No.,Game,サーバー,サイド,Fault,内容,ポイント勝者,サーバーP,レシーバーP,ゲームカウント,備考\n";
                 let seq = 1;
                 const fmtPt = (pt, isTB) => isTB ? pt : (pt > 3 ? "Ad" : POINTS[pt]);
@@ -416,7 +458,7 @@
                         else winnerRole = "レシーバー";
                     }
 
-                    // Score Display (logic same as before, strings can be kept simple or japanese)
+                    // Score Display (logic same as before)
                     let nextPointsA = s.pointsA;
                     let nextPointsB = s.pointsB;
                     if (t.type !== 'FAULT') { if (t.winner === 'A') nextPointsA++; else nextPointsB++; }
@@ -452,15 +494,18 @@
                          if (nextS.gamesA !== s.gamesA || nextS.gamesB !== s.gamesB) {
                              const gameWinner = nextS.gamesA > s.gamesA ? 'A' : 'B';
                              if (gameWinner === t.calculatedServerSide) note = "Keep"; else note = "Break";
+                             contentStr += " (GAME)";
                          }
                     } else if (currentScore.winner) {
                          const gameWinner = currentScore.gamesA > s.gamesA ? 'A' : 'B';
                          if (gameWinner === t.calculatedServerSide) note = "Keep"; else note = "Break";
+                         contentStr += " (MATCH)";
                     }
 
                     csvContent += `${seq},${gameNum},${serverName},${sideStr},${faultStr},${contentStr},${winnerRole},${serverP},${receiverP},${gameCountStr},${note}\n`;
                     seq++;
                 });
+                
                 return csvContent;
             };
 
