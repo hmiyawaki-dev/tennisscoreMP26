@@ -209,7 +209,7 @@
                         <div className="bg-slate-900 text-white p-3 flex justify-between items-center"><h3 className="font-bold flex items-center gap-2"><Settings size={16}/> 通信設定</h3><button onClick={onClose}><X size={20}/></button></div>
                         <div className="p-6 space-y-4">
                             <div><label className="block text-xs font-bold text-gray-500 mb-1">GAS WebアプリURL</label><input type="text" placeholder="https://script.google.com/macros/s/..." className="w-full p-2 border rounded-md text-xs text-gray-600" value={tempUrl} onChange={(e) => setTempUrl(e.target.value)} /><p className="text-[10px] text-gray-400 mt-1">※Slack連携/Drive保存/選手データ取得に使用します。</p></div>
-                            <Button className="w-full flex gap-2 items-center justify-center" variant="secondary" onClick={() => onFetchData(tempUrl)}><Download size={16}/> 選手データを更新</Button>
+                            <Button className="w-full flex gap-2 items-center justify-center" variant="secondary" onClick={() => onFetchData(tempUrl)}><Download size={16}/> 更新</Button>
                             <div className="h-px bg-slate-100 my-2"></div>
                             <Button className="w-full" onClick={handleSave}>設定を保存</Button>
                         </div>
@@ -245,11 +245,11 @@
             return (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in" style={{ touchAction: 'none' }}>
                     <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
-                        <div className="bg-slate-900 text-white p-3 flex justify-between items-center"><h3 className="font-bold flex items-center gap-2"><CloudUpload size={16}/> Slack/Drive連携</h3><button onClick={onClose}><X size={20}/></button></div>
+                        <div className="bg-slate-900 text-white p-3 flex justify-between items-center"><h3 className="font-bold flex items-center gap-2"><CloudUpload size={16}/> Slack通知</h3><button onClick={onClose}><X size={20}/></button></div>
                         <div className="p-6 space-y-4">
                             <Button className="w-full flex gap-2 items-center justify-center" size="lg" onClick={handleSendScore}><Share2 size={20}/> 途中経過を通知 (Webhook)</Button>
                             <div className="h-px bg-slate-100 my-2"></div>
-                            <Button className="w-full flex gap-2 items-center justify-center" variant="success" size="lg" onClick={handleSendResult}><Save size={20}/> 結果CSVをDriveへ保存 & 通知</Button>
+                            <Button className="w-full flex gap-2 items-center justify-center" variant="success" size="lg" onClick={handleSendResult}><Save size={20}/> 結果をDriveへ保存 & 通知</Button>
                             <div className="h-px bg-slate-100 my-2"></div>
                             <Button className="w-full flex gap-2 items-center justify-center" variant="danger" onClick={onResetRequest}><LogOut size={20}/> 試合を中断して新しい記録へ</Button>
                         </div>
@@ -267,9 +267,9 @@
             const [showResetConfirm, setShowResetConfirm] = useState(false);
             
             const [matchInfo, setMatchInfo] = useState({
-                matchName: '練習試合', isDoubles: false,
-                playerA1: 'Player A1', playerA2: 'Player A2',
-                playerB1: 'Player B1', playerB2: 'Player B2',
+                matchName: '試合名', isDoubles: false,
+                playerA1: 'Player A', playerA2: 'Player B',
+                playerB1: 'Player X', playerB2: 'Player Y',
                 matchType: '1set', setsToWin: 1, gamesToWinSet: 6, tiebreakAt: 6, noAd: false, 
                 serverFirst: 'A', gasUrl: DEFAULT_GAS_URL
             });
